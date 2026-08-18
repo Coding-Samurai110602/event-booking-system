@@ -34,3 +34,4 @@ terraform/terraform.tfstate.backup
 # Terraform variable files with real secrets
 terraform/terraform.tfvars
 terraform/*.tfvars
+INTERVIEW_PREP.md
