@@ -60,13 +60,13 @@ jobs:
         run: npm ci --prefix booking-worker
 
       - name: TypeScript type-check — booking-worker
-        run: npx --prefix booking-worker tsc --noEmit
+        run: npx --prefix booking-worker tsc -p booking-worker/tsconfig.json --noEmit
 
       - name: Install Node deps — status-service
         run: npm ci --prefix status-service
 
       - name: TypeScript type-check — status-service
-        run: npx --prefix status-service tsc --noEmit
+        run: npx --prefix status-service tsc -p status-service/tsconfig.json --noEmit
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
 # ║  JOB 2 — UNIT TESTS                                                       ║
