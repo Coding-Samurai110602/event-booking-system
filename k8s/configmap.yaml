@@ -9,6 +9,7 @@ data:
   LOG_LEVEL:          "INFO"
   PORT:               "3001"    # status-service listen port
   HEALTH_PORT:        "3000"    # booking-worker probe server port
-  # Set to "true" when connecting to RDS (or any Postgres that requires SSL).
-  # Leave "false" for local Docker Compose / Minikube in-cluster Postgres.
-  DB_SSL:             "false"
+  # "true" for RDS (SSL required) — this is the CI/CD and production default.
+  # Override to "false" only for local Docker Compose / Minikube where the
+  # in-cluster Postgres does not use SSL.
+  DB_SSL:             "true"
