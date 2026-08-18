@@ -35,3 +35,4 @@ terraform/terraform.tfstate.backup
 terraform/terraform.tfvars
 terraform/*.tfvars
 INTERVIEW_PREP.md
+.Rhistory
