@@ -275,6 +275,42 @@ git push origin v1.2.3
 
 ---
 
+## Frontend
+
+A minimal React demo UI built with Vite. It is a functional testing interface — not a production application.
+
+### What it does
+
+| Section | Component | Backed by |
+|---|---|---|
+| Create a Booking | `BookingForm` | `POST /bookings` on booking-api |
+| Watch Live Event Status | `LiveEventStatus` | `GET /events/:id/live` SSE on status-service |
+| Look Up a Booking | `BookingLookup` | `GET /bookings/:id` on booking-api |
+
+### Running with Docker Compose (all 4 services)
+
+```bash
+docker compose up --build
+# Frontend available at http://localhost:5173
+# booking-api at http://localhost:8000
+# status-service at http://localhost:3001
+```
+
+> The Vite bundle bakes in `VITE_BOOKING_API_URL` and `VITE_STATUS_SERVICE_URL` at build time as `http://localhost:8000` and `http://localhost:3001`. These are resolved by the browser, not the container, so they must be the host-facing ports.
+
+### Running frontend only (against already-running backends)
+
+```bash
+cd frontend
+npm install
+npm run dev
+# http://localhost:5173
+```
+
+> This is a minimal demo UI for local development and testing only — not a production interface.
+
+---
+
 ## Project structure
 
 ```

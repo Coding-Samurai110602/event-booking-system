@@ -1,0 +1,139 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: #f5f5f5;
+  color: #222;
+  line-height: 1.5;
+}
+
+#root {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 24px 16px 64px;
+}
+
+h1 { font-size: 1.5rem; margin-bottom: 4px; }
+h2 { font-size: 1.1rem; margin-bottom: 12px; color: #444; }
+h3 { font-size: 0.95rem; font-weight: 600; color: #555; margin-bottom: 8px; }
+
+.site-header {
+  padding-bottom: 20px;
+  margin-bottom: 28px;
+  border-bottom: 2px solid #ddd;
+}
+
+.site-header p { color: #666; font-size: 0.9rem; margin-top: 4px; }
+
+.section {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 20px 24px;
+  margin-bottom: 20px;
+}
+
+label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 500;
+  margin-bottom: 4px;
+  color: #444;
+}
+
+input[type="text"],
+input[type="number"] {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.95rem;
+  margin-bottom: 12px;
+}
+
+input[type="text"]:focus,
+input[type="number"]:focus {
+  outline: 2px solid #4f8ef7;
+  border-color: transparent;
+}
+
+button {
+  padding: 8px 18px;
+  background: #4f8ef7;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+button:disabled { background: #aaa; cursor: not-allowed; }
+button:hover:not(:disabled) { background: #3a7ae0; }
+
+pre {
+  background: #f0f0f0;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 12px;
+  font-size: 0.82rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin-top: 12px;
+}
+
+.error-box {
+  border: 1px solid #e55;
+  background: #fff5f5;
+  color: #b00;
+  border-radius: 4px;
+  padding: 10px 12px;
+  margin-top: 12px;
+  font-size: 0.9rem;
+}
+
+.seats-display {
+  font-size: 3rem;
+  font-weight: 700;
+  color: #222;
+  line-height: 1;
+  margin: 12px 0 6px;
+}
+
+.status-badge {
+  display: inline-block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  margin-bottom: 12px;
+}
+
+.status-badge.connected    { background: #d4edda; color: #155724; }
+.status-badge.disconnected { background: #f8d7da; color: #721c24; }
+
+.update-log {
+  margin-top: 12px;
+  border-top: 1px solid #eee;
+  padding-top: 10px;
+}
+
+.update-log li {
+  font-size: 0.82rem;
+  color: #555;
+  list-style: none;
+  padding: 2px 0;
+}
+
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid #ccc;
+  border-top-color: #4f8ef7;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }

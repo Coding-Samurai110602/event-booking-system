@@ -1,10 +1,14 @@
 import express from 'express';
+import cors from 'cors';
 import { liveAvailability } from './sse';
 import { getPool } from './db';
 import logger from './logger';
 
 const app  = express();
 const PORT = parseInt(process.env.PORT ?? '3001', 10);
+
+// Permissive CORS for local dev/demo only — tighten allow_origins before any real deployment.
+app.use(cors({ origin: 'http://localhost:5173' }));
 
 // ── Probes ───────────────────────────────────────────────────────────────────
 

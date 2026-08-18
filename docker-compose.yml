@@ -88,5 +88,23 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # VITE_* vars are baked into the static bundle at build time.
+        # Within the Compose network, services are reachable by their service
+        # name — but these URLs are resolved by the *browser*, not the container,
+        # so they must be the host-facing ports (localhost:8000/3001).
+        VITE_BOOKING_API_URL:    http://localhost:8000
+        VITE_STATUS_SERVICE_URL: http://localhost:3001
+    ports:
+      - "5173:5173"
+    depends_on:
+      - booking-api
+      - status-service
+    restart: unless-stopped
+
 volumes:
   postgres_data:
