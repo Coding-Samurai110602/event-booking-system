@@ -16,6 +16,20 @@ resource "aws_eks_cluster" "main" {
     endpoint_private_access = true
   }
 
+  # API_AND_CONFIG_MAP enables both EKS Access Entries (the modern IAM-native
+  # method) and the legacy aws-auth ConfigMap simultaneously.  This lets the
+  # GitHub Actions IAM user be granted cluster access via an Access Entry
+  # (aws_eks_access_entry + aws_eks_access_policy_association resources)
+  # without breaking any existing aws-auth entries on the cluster.
+  # Use API-only once all principals have been migrated off the ConfigMap.
+  access_config {
+    authentication_mode                         = "API_AND_CONFIG_MAP"
+    # Must match the value AWS set implicitly when the cluster was first created
+    # without an access_config block.  Omitting it causes Terraform to see a
+    # diff against the AWS default (true) and force cluster replacement.
+    bootstrap_cluster_creator_admin_permissions = true
+  }
+
   # Shipping all control-plane log streams to CloudWatch lets you audit
   # auth decisions and diagnose scheduling failures post-hoc.
   enabled_cluster_log_types = [
