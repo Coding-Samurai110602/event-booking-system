@@ -24,7 +24,7 @@ spec:
       containers:
         - name: booking-worker
           image: 276571117647.dkr.ecr.us-east-1.amazonaws.com/booking-worker:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           ports:
             - name: health
               containerPort: 3000

@@ -23,9 +23,7 @@ spec:
           # Replace with your real image URI, e.g.:
           #   123456789012.dkr.ecr.us-east-1.amazonaws.com/booking-api:v1.2.3
           image: 276571117647.dkr.ecr.us-east-1.amazonaws.com/booking-api:latest
-          # IfNotPresent: uses a locally-built image in Minikube without pulling.
-          # Change to Always in production CI where the image tag is immutable.
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           ports:
             - name: http
               containerPort: 8000

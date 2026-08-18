@@ -22,7 +22,7 @@ spec:
       containers:
         - name: status-service
           image: 276571117647.dkr.ecr.us-east-1.amazonaws.com/status-service:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           ports:
             - name: http
               containerPort: 3001
