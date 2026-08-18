@@ -1,0 +1,88 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: booking-worker
+  namespace: default
+  labels:
+    app: booking-worker
+spec:
+  # Initial replica count.  The HPA (hpa.yaml) manages this at runtime;
+  # minReplicas there is the effective floor.
+  replicas: 2
+  selector:
+    matchLabels:
+      app: booking-worker
+  template:
+    metadata:
+      labels:
+        app: booking-worker
+    spec:
+      # Longer grace period than the API: give the worker time to finish
+      # processing the job it currently holds before the pod is killed.
+      terminationGracePeriodSeconds: 60
+
+      containers:
+        - name: booking-worker
+          image: 276571117647.dkr.ecr.us-east-1.amazonaws.com/booking-worker:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: health
+              containerPort: 3000
+              protocol: TCP
+
+          env:
+            - name: LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: booking-config
+                  key: LOG_LEVEL
+            - name: HEALTH_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: booking-config
+                  key: HEALTH_PORT
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: booking-secrets
+                  key: DATABASE_URL
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: booking-secrets
+                  key: REDIS_URL
+            - name: DB_SSL
+              valueFrom:
+                configMapKeyRef:
+                  name: booking-config
+                  key: DB_SSL
+
+          resources:
+            requests:
+              cpu:    "200m"
+              memory: "128Mi"
+            limits:
+              cpu:    "1000m"
+              memory: "256Mi"
+
+          # Liveness: restart if the probe server itself becomes unresponsive.
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 20
+            periodSeconds:       20
+            timeoutSeconds:      5
+            failureThreshold:    3
+
+          # Readiness: only mark the pod ready once it has live connections to
+          # both Postgres and Redis.  The worker's startup retry loop already
+          # handles waiting; readiness here is a belt-and-suspenders guard.
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds:       10
+            timeoutSeconds:      5
+            failureThreshold:    3

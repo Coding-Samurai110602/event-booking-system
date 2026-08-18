@@ -1,0 +1,41 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: booking-worker
+  namespace: default
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: booking-worker
+
+  minReplicas: 2
+  maxReplicas: 10
+
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type:               AverageValue
+          # Scale out when average CPU across all worker pods exceeds 70 %.
+          # Under light load workers idle on BLPOP; under a burst they burn CPU
+          # on DB transactions, so CPU is a good proxy for queue throughput.
+          averageValue: 700m  # 70 % of the 1000m limit declared in deployment.yaml
+
+  behavior:
+    scaleUp:
+      # Add pods quickly when the queue is growing — don't wait 3 minutes.
+      stabilizationWindowSeconds: 30
+      policies:
+        - type:          Pods
+          value:         2        # add at most 2 pods per scale event
+          periodSeconds: 30
+    scaleDown:
+      # Be conservative on scale-down: a brief queue drain shouldn't immediately
+      # remove workers that might be needed again in seconds.
+      stabilizationWindowSeconds: 180
+      policies:
+        - type:          Pods
+          value:         1        # remove at most 1 pod per scale event
+          periodSeconds: 60

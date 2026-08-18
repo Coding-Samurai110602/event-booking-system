@@ -1,0 +1,247 @@
+name: CI/CD
+
+# ── Triggers ──────────────────────────────────────────────────────────────────
+# Every push and pull-request runs lint, test, and Docker build (no deploy).
+# A semver tag push (v*.*.*) additionally runs the deploy job, gated behind
+# a manual approval on the "production" GitHub Environment.
+on:
+  push:
+    branches: ["**"]
+    tags:     ["v*.*.*"]
+  pull_request:
+    branches: ["main"]
+
+# Cancel any in-progress run for the same branch/PR so pushes don't queue up.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# ── Shared config ─────────────────────────────────────────────────────────────
+env:
+  AWS_REGION:      us-east-1
+  ECR_REGISTRY:    ${{ secrets.ECR_REGISTRY }}   # e.g. 123456789012.dkr.ecr.us-east-1.amazonaws.com
+  # Image tags: use the short commit SHA for traceability.
+  # Tag pushes also produce a human-readable semver tag (set per-job below).
+  IMAGE_TAG:       ${{ github.sha }}
+
+# ╔═══════════════════════════════════════════════════════════════════════════╗
+# ║  JOB 1 — LINT                                                             ║
+# ╚═══════════════════════════════════════════════════════════════════════════╝
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Python (booking-api) ────────────────────────────────────────────────
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: booking-api/requirements-dev.txt
+
+      - name: Install Python linter
+        run: pip install ruff==0.8.6
+
+      - name: Ruff lint — booking-api
+        run: ruff check booking-api/app booking-api/tests
+
+      # ── Node (booking-worker + status-service) ──────────────────────────────
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            booking-worker/package-lock.json
+            status-service/package-lock.json
+
+      - name: Install Node deps — booking-worker
+        run: npm ci --prefix booking-worker
+
+      - name: TypeScript type-check — booking-worker
+        run: npx --prefix booking-worker tsc --noEmit
+
+      - name: Install Node deps — status-service
+        run: npm ci --prefix status-service
+
+      - name: TypeScript type-check — status-service
+        run: npx --prefix status-service tsc --noEmit
+
+# ╔═══════════════════════════════════════════════════════════════════════════╗
+# ║  JOB 2 — UNIT TESTS                                                       ║
+# ╚═══════════════════════════════════════════════════════════════════════════╝
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    # Tests are independent of lint — run both in parallel.
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Python — booking-api idempotency tests ──────────────────────────────
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: booking-api/requirements-dev.txt
+
+      - name: Install Python deps
+        run: pip install -r booking-api/requirements-dev.txt
+
+      - name: pytest — booking-api
+        run: pytest booking-api/tests/ -v
+        # No live Postgres/Redis needed: all DB and Redis calls are mocked.
+
+      # ── Node — booking-worker inventory + retry tests ───────────────────────
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: booking-worker/package-lock.json
+
+      - name: Install Node deps — booking-worker
+        run: npm ci --prefix booking-worker
+
+      - name: Jest — booking-worker
+        run: npm test --prefix booking-worker -- --ci --verbose
+
+# ╔═══════════════════════════════════════════════════════════════════════════╗
+# ║  JOB 3 — DOCKER BUILD + ECR PUSH                                          ║
+# ╚═══════════════════════════════════════════════════════════════════════════╝
+  build:
+    name: Build & Push (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    needs: [lint, test]   # don't build if lint or tests fail
+    permissions:
+      id-token: write     # needed if you later switch to OIDC auth
+      contents: read
+
+    strategy:
+      # Build all three images in parallel; fail-fast: false lets the other
+      # builds complete even if one fails (useful for diagnosing multi-service
+      # breakages in one run).
+      matrix:
+        service: [booking-api, booking-worker, status-service]
+      fail-fast: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Multi-platform builds are slow on the default runner; layer caching
+      # via GitHub Actions cache cuts subsequent build times by ~60%.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # Compute a human-readable tag when the trigger is a semver tag push.
+      # On branch pushes this step outputs an empty string; IMAGE_TAG (SHA)
+      # is used instead for those runs.
+      - name: Compute image tags
+        id: tags
+        run: |
+          SHA_TAG="${{ env.ECR_REGISTRY }}/${{ matrix.service }}:${{ env.IMAGE_TAG }}"
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            SEMVER_TAG="${{ env.ECR_REGISTRY }}/${{ matrix.service }}:${{ github.ref_name }}"
+            echo "tags=${SHA_TAG},${SEMVER_TAG}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tags=${SHA_TAG}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and push — ${{ matrix.service }}
+        uses: docker/build-push-action@v6
+        with:
+          context:   ./${{ matrix.service }}
+          file:      ./${{ matrix.service }}/Dockerfile
+          push:      true
+          # linux/amd64 matches EKS managed node group instance architecture.
+          platforms: linux/amd64
+          tags:      ${{ steps.tags.outputs.tags }}
+          # Layer cache: pull from the previous SHA's layers on cache hit.
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to:   type=gha,mode=max,scope=${{ matrix.service }}
+
+# ╔═══════════════════════════════════════════════════════════════════════════╗
+# ║  JOB 4 — DEPLOY                                                           ║
+# ╚═══════════════════════════════════════════════════════════════════════════╝
+  deploy:
+    name: Deploy to EKS
+    runs-on: ubuntu-latest
+    needs: [build]
+
+    # Gate: only run on a semver tag push, and require a human to click
+    # "Approve" in the GitHub UI before kubectl apply runs.
+    # Setup: create a "production" Environment in your repo settings and add
+    # at least one required reviewer — the deploy will pause here until approved.
+    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+    environment:
+      name: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig for EKS
+        run: |
+          aws eks update-kubeconfig \
+            --region "${{ env.AWS_REGION }}" \
+            --name   "${{ secrets.EKS_CLUSTER_NAME }}"
+
+      # Patch each Deployment's image to the exact SHA that was just pushed.
+      # This is safer than `kubectl apply -f` on the whole directory because
+      # it only changes the image reference — it doesn't accidentally apply
+      # a locally-edited manifest that was never committed.
+      - name: Update image tags in manifests
+        run: |
+          for SERVICE in booking-api booking-worker status-service; do
+            kubectl set image deployment/${SERVICE} \
+              ${SERVICE}=${{ env.ECR_REGISTRY }}/${SERVICE}:${{ env.IMAGE_TAG }} \
+              --record=false
+          done
+
+      # Apply ConfigMap and StorageClass changes (idempotent; safe to re-apply).
+      # Secrets are NOT applied here — they must be managed out-of-band to
+      # avoid storing credentials in CI environment or git history.
+      - name: Apply non-secret manifests
+        run: |
+          kubectl apply -f k8s/configmap.yaml
+          kubectl apply -f k8s/storageclass.yaml
+          kubectl apply -f k8s/booking-api/service.yaml
+          kubectl apply -f k8s/booking-worker/service.yaml
+          kubectl apply -f k8s/booking-worker/hpa.yaml
+          kubectl apply -f k8s/status-service/service.yaml
+
+      - name: Wait for rollouts to complete
+        run: |
+          kubectl rollout status deployment/booking-api    --timeout=300s
+          kubectl rollout status deployment/booking-worker --timeout=300s
+          kubectl rollout status deployment/status-service --timeout=300s
+
+      - name: Smoke-test readiness probes
+        run: |
+          for DEPLOY in booking-api booking-worker status-service; do
+            READY=$(kubectl get deployment/${DEPLOY} \
+              -o jsonpath='{.status.readyReplicas}')
+            DESIRED=$(kubectl get deployment/${DEPLOY} \
+              -o jsonpath='{.status.replicas}')
+            if [[ "$READY" != "$DESIRED" ]]; then
+              echo "ERROR: ${DEPLOY} ready=${READY} desired=${DESIRED}"
+              exit 1
+            fi
+            echo "${DEPLOY}: ${READY}/${DESIRED} replicas ready"
+          done

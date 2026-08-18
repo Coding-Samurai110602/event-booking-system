@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: booking-api
+  namespace: default
+  labels:
+    app: booking-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: booking-api
+  template:
+    metadata:
+      labels:
+        app: booking-api
+    spec:
+      # Give in-flight requests time to complete before the pod is removed
+      terminationGracePeriodSeconds: 30
+
+      containers:
+        - name: booking-api
+          # Replace with your real image URI, e.g.:
+          #   123456789012.dkr.ecr.us-east-1.amazonaws.com/booking-api:v1.2.3
+          image: 276571117647.dkr.ecr.us-east-1.amazonaws.com/booking-api:latest
+          # IfNotPresent: uses a locally-built image in Minikube without pulling.
+          # Change to Always in production CI where the image tag is immutable.
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+
+          env:
+            - name: LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: booking-config
+                  key: LOG_LEVEL
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: booking-secrets
+                  key: DATABASE_URL
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: booking-secrets
+                  key: REDIS_URL
+            - name: DB_SSL
+              valueFrom:
+                configMapKeyRef:
+                  name: booking-config
+                  key: DB_SSL
+
+          resources:
+            requests:
+              cpu:    "100m"
+              memory: "128Mi"
+            limits:
+              cpu:    "500m"
+              memory: "256Mi"
+
+          # Liveness: kubelet restarts the container if /health stops responding.
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds:       20
+            timeoutSeconds:      5
+            failureThreshold:    3
+
+          # Readiness: removes the pod from the Service endpoint list until both
+          # Postgres and Redis are reachable.  Traffic is only sent here when
+          # /ready returns 200.
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds:       10
+            timeoutSeconds:      5
+            failureThreshold:    3

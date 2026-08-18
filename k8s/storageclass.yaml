@@ -1,0 +1,27 @@
+# EBS CSI StorageClass — EKS / AWS only.
+# Do NOT apply this to Minikube; it will cause PVCs to remain Pending because
+# the ebs.csi.aws.com provisioner does not exist in a local cluster.
+# Minikube uses its own default class (k8s.io/minikube-hostpath) automatically.
+#
+# Apply order: after `terraform apply` installs the aws-ebs-csi-driver add-on,
+# then before applying any PVCs:
+#   kubectl apply -f k8s/storageclass.yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: ebs-gp3
+  annotations:
+    # Marking this as default means any PVC that omits storageClassName binds
+    # here automatically — no per-PVC annotation needed.
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: ebs.csi.aws.com
+volumeBindingMode: WaitForFirstConsumer
+# WaitForFirstConsumer is essential for EBS: volumes are AZ-specific, so the
+# provisioner must wait until the pod is scheduled to a node before creating
+# the volume in the correct AZ.  Immediate binding can create the volume in
+# the wrong AZ and leave the pod permanently unschedulable.
+reclaimPolicy: Delete
+allowVolumeExpansion: true
+parameters:
+  type:      gp3
+  encrypted: "true"

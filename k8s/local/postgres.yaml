@@ -1,0 +1,117 @@
+# ── Local / Minikube only ─────────────────────────────────────────────────────
+# In production this is replaced by the RDS instance Terraform provisions.
+# The app Deployments need no changes between environments — only the
+# DATABASE_URL value inside k8s/secret.yaml changes.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# StatefulSet gives Postgres a stable pod name (postgres-0) and lets
+# volumeClaimTemplates create a PVC automatically from Minikube's default
+# StorageClass.  No manual PVC creation needed.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: default
+  labels:
+    app: postgres
+spec:
+  serviceName: postgres   # must match the headless Service name below
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+              name: postgres
+
+          env:
+            # These three vars come from the same booking-secrets Secret used
+            # by the application pods, keeping credentials in one place.
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: booking-secrets
+                  key: POSTGRES_DB
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: booking-secrets
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: booking-secrets
+                  key: POSTGRES_PASSWORD
+
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+              subPath: pgdata   # avoids the "lost+found" error on some volume types
+            - name: migrations
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+
+          resources:
+            requests:
+              cpu:    "100m"
+              memory: "256Mi"
+            limits:
+              cpu:    "500m"
+              memory: "512Mi"
+
+          readinessProbe:
+            exec:
+              # pg_isready exits 0 when the server is accepting connections
+              command: ["pg_isready", "-q"]
+            initialDelaySeconds: 10
+            periodSeconds:       5
+            failureThreshold:    6
+
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-q"]
+            initialDelaySeconds: 30
+            periodSeconds:       10
+            failureThreshold:    3
+
+      volumes:
+        - name: migrations
+          configMap:
+            name: postgres-migrations
+
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi
+
+---
+# Headless Service — required by StatefulSet so pods get stable DNS names
+# (postgres-0.postgres.default.svc.cluster.local).  Other pods in the cluster
+# reach Postgres simply as "postgres:5432".
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: default
+  labels:
+    app: postgres
+spec:
+  selector:
+    app: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+  clusterIP: None   # headless — DNS resolves directly to pod IPs

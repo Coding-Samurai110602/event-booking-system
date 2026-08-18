@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: booking-config
+  namespace: default
+data:
+  # Non-secret runtime configuration shared across all three services.
+  # Connection strings (which embed passwords) live in k8s/secret.yaml.
+  LOG_LEVEL:          "INFO"
+  PORT:               "3001"    # status-service listen port
+  HEALTH_PORT:        "3000"    # booking-worker probe server port
+  # Set to "true" when connecting to RDS (or any Postgres that requires SSL).
+  # Leave "false" for local Docker Compose / Minikube in-cluster Postgres.
+  DB_SSL:             "false"

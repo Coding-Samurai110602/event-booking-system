@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: booking-worker
+  namespace: default
+  labels:
+    app: booking-worker
+spec:
+  selector:
+    app: booking-worker
+  ports:
+    - name: health
+      port: 3000
+      targetPort: 3000
+      protocol: TCP
+  # The worker is a queue consumer — nothing calls it directly.
+  # This Service exists so the health port is addressable by name within the
+  # cluster (e.g. for a future Prometheus scrape or admin tooling).
+  type: ClusterIP

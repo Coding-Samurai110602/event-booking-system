@@ -1,0 +1,41 @@
+# Embeds the same migration SQL that docker-compose mounts from ./migrations/.
+# Postgres runs every file in /docker-entrypoint-initdb.d on first boot,
+# in filename order — 001 before 002 — which is all we need.
+#
+# Used only in Minikube / local cluster.  In production, RDS handles schema
+# via a one-time migration job (or this same ConfigMap in a K8s Job).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-migrations
+  namespace: default
+data:
+  001_create_events.sql: |
+    -- Migration 001: events table
+    -- gen_random_uuid() is built-in from PostgreSQL 13+
+    CREATE TABLE IF NOT EXISTS events (
+        id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+        name            TEXT        NOT NULL,
+        total_seats     INTEGER     NOT NULL,
+        remaining_seats INTEGER     NOT NULL,
+        CONSTRAINT events_total_seats_positive    CHECK (total_seats     >  0),
+        CONSTRAINT events_remaining_non_negative  CHECK (remaining_seats >= 0)
+    );
+
+  002_create_bookings.sql: |
+    -- Migration 002: bookings table
+    CREATE TABLE IF NOT EXISTS bookings (
+        booking_id  UUID        PRIMARY KEY,
+        event_id    UUID        NOT NULL REFERENCES events(id),
+        user_id     TEXT        NOT NULL,
+        num_seats   INTEGER     NOT NULL,
+        status      TEXT        NOT NULL DEFAULT 'pending',
+        reason      TEXT,
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        CONSTRAINT bookings_num_seats_positive CHECK (num_seats > 0),
+        CONSTRAINT bookings_status_valid       CHECK (status IN ('pending', 'confirmed', 'rejected'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_bookings_event_id ON bookings (event_id);
+    CREATE INDEX IF NOT EXISTS idx_bookings_status   ON bookings (status);

@@ -1,0 +1,95 @@
+# ── Local / Minikube only ─────────────────────────────────────────────────────
+# In production this is replaced by ElastiCache.
+# The REDIS_URL in k8s/secret.yaml is the only thing that changes.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# PVC for Redis RDB snapshots — survives pod restarts so queued jobs
+# that haven't been processed yet are not lost when the pod is replaced.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-data
+  namespace: default
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: default
+  labels:
+    app: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+              name: redis
+
+          # Save a snapshot every 60 s if at least 1 key changed.
+          # Keeps the queue durable across restarts without the write
+          # amplification of append-only mode.
+          args: ["--save", "60", "1", "--loglevel", "warning"]
+
+          volumeMounts:
+            - name: data
+              mountPath: /data
+
+          resources:
+            requests:
+              cpu:    "50m"
+              memory: "64Mi"
+            limits:
+              cpu:    "200m"
+              memory: "128Mi"
+
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds:       5
+            failureThreshold:    3
+
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 15
+            periodSeconds:       10
+            failureThreshold:    3
+
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: redis-data
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: default
+  labels:
+    app: redis
+spec:
+  selector:
+    app: redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: 6379
+  type: ClusterIP

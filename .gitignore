@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+dist/
+*.js.map
+*.tsbuildinfo
+
+# Environment
+.env
+.env.local
+
+# Kubernetes secrets — never commit real credentials
+k8s/secret.yaml
+
+# Terraform
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup
+
+# OS
+.DS_Store
+
+# Terraform variable files with real secrets
+terraform/terraform.tfvars
+terraform/*.tfvars
