@@ -18,11 +18,14 @@ concurrency:
 
 # ── Shared config ─────────────────────────────────────────────────────────────
 env:
-  AWS_REGION:      us-east-1
-  ECR_REGISTRY:    ${{ secrets.ECR_REGISTRY }}   # e.g. 123456789012.dkr.ecr.us-east-1.amazonaws.com
-  # Image tags: use the short commit SHA for traceability.
-  # Tag pushes also produce a human-readable semver tag (set per-job below).
-  IMAGE_TAG:       ${{ github.sha }}
+  AWS_REGION: us-east-1
+  IMAGE_TAG:  ${{ github.sha }}
+  # ECR_REGISTRY is intentionally NOT set here.
+  # Workflow-level env blocks cannot read secrets — GitHub evaluates them to
+  # an empty string at that scope, producing tags like "/service:sha".
+  # The build job reads the registry from steps.ecr-login.outputs.registry
+  # (output by amazon-ecr-login after a successful login).
+  # The deploy job reads secrets.ECR_REGISTRY directly inside its run: step.
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
 # ║  JOB 1 — LINT                                                             ║
@@ -143,15 +146,16 @@ jobs:
         id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
 
-      # Compute a human-readable tag when the trigger is a semver tag push.
-      # On branch pushes this step outputs an empty string; IMAGE_TAG (SHA)
-      # is used instead for those runs.
+      # Compute image tags from the registry hostname emitted by ecr-login.
+      # steps.ecr-login.outputs.registry is always correct after a successful
+      # login — no need to thread the secret through env at all.
       - name: Compute image tags
         id: tags
         run: |
-          SHA_TAG="${{ env.ECR_REGISTRY }}/${{ matrix.service }}:${{ env.IMAGE_TAG }}"
+          REGISTRY="${{ steps.ecr-login.outputs.registry }}"
+          SHA_TAG="${REGISTRY}/${{ matrix.service }}:${{ env.IMAGE_TAG }}"
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
-            SEMVER_TAG="${{ env.ECR_REGISTRY }}/${{ matrix.service }}:${{ github.ref_name }}"
+            SEMVER_TAG="${REGISTRY}/${{ matrix.service }}:${{ github.ref_name }}"
             echo "tags=${SHA_TAG},${SEMVER_TAG}" >> "$GITHUB_OUTPUT"
           else
             echo "tags=${SHA_TAG}" >> "$GITHUB_OUTPUT"
@@ -208,9 +212,11 @@ jobs:
       # a locally-edited manifest that was never committed.
       - name: Update image tags in manifests
         run: |
+          # secrets.ECR_REGISTRY is referenced here at step (run) scope,
+          # where secrets are available — unlike workflow-level env blocks.
           for SERVICE in booking-api booking-worker status-service; do
             kubectl set image deployment/${SERVICE} \
-              ${SERVICE}=${{ env.ECR_REGISTRY }}/${SERVICE}:${{ env.IMAGE_TAG }} \
+              ${SERVICE}=${{ secrets.ECR_REGISTRY }}/${SERVICE}:${{ env.IMAGE_TAG }} \
               --record=false
           done
 
