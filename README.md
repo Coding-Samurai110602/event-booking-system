@@ -1,6 +1,14 @@
 # Event Ticket Booking System
 
-A distributed, fault-tolerant event ticket booking system built with three independent services, Redis as a job queue, and PostgreSQL as the data store.
+A distributed event booking system with concurrency-safe inventory handling — built to process concurrent booking requests without overselling seats, while keeping the API responsive under load.
+
+React frontend, FastAPI backend, a Redis-backed job queue, a worker using row-level locking (`SELECT ... FOR UPDATE`) for inventory checks, and live seat-availability updates via Server-Sent Events. Deployed to AWS EKS with RDS Postgres, infrastructure provisioned through Terraform, with a CI/CD pipeline via GitHub Actions.
+
+## Demo
+
+![Booking form and response](docs/screenshots/frontend-booking.png)
+
+![Live seat status and booking lookup](docs/screenshots/frontend-live-status.png)
 
 ---
 
@@ -58,6 +66,55 @@ A common production failure mode: a worker container starts before its dependenc
 ### What happens to a job that throws an unexpected error
 
 If `processJob` throws anything other than an inventory-rejection (a genuine exception — DB disconnect, malformed payload, etc.), the raw job payload is pushed to `bookings:dead-letter` in Redis instead of being silently dropped. No booking is ever lost; dead-lettered jobs can be inspected and replayed.
+
+---
+
+## Architecture Diagram
+
+> Rendered automatically by GitHub. For the standalone source see [`docs/architecture.mmd`](docs/architecture.mmd).
+
+```mermaid
+flowchart TD
+    Browser(["🌐 Browser\n(React frontend\nport 5173)"])
+
+    subgraph api ["booking-api  •  Python / FastAPI  •  port 8000"]
+        API["POST /bookings\nGET /bookings/:id\nGET /events/:id/availability\nGET /health · /ready"]
+    end
+
+    subgraph queue ["Redis  •  port 6379"]
+        Q[("bookings:queue\n(List — RPUSH / BLPOP)")]
+        DL[("bookings:dead-letter\n(failed jobs)")]
+    end
+
+    subgraph worker ["booking-worker  •  Node.js / TypeScript  •  2 replicas"]
+        W["BLPOP loop\nSELECT … FOR UPDATE\nconfirm / reject"]
+    end
+
+    subgraph db ["PostgreSQL / RDS  •  port 5432"]
+        PG[("events\nbookings")]
+    end
+
+    subgraph sse ["status-service  •  Node.js / TypeScript  •  port 3001"]
+        SS["GET /events/:id/live\n(SSE — polls every 2 s)"]
+    end
+
+    Browser -->|"POST /bookings\nGET /bookings/:id"| API
+    API -->|"INSERT booking (pending)\nON CONFLICT DO NOTHING"| PG
+    API -->|"RPUSH job JSON"| Q
+    Q -->|"BLPOP (blocking pop)"| W
+    W -->|"BEGIN · SELECT FOR UPDATE\nUPDATE remaining_seats\nUPDATE bookings status\nCOMMIT / ROLLBACK"| PG
+    W -->|"RPUSH failed job"| DL
+    SS -->|"SELECT remaining_seats\n(poll every 2 s)"| PG
+    SS -->|"SSE data: {remaining_seats}\n(on change only)"| Browser
+
+    style Browser fill:#dbeafe,stroke:#3b82f6,color:#1e3a5f
+    style API    fill:#dcfce7,stroke:#16a34a,color:#14532d
+    style Q      fill:#fef9c3,stroke:#ca8a04,color:#713f12
+    style DL     fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
+    style W      fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+    style PG     fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e
+    style SS     fill:#fce7f3,stroke:#db2777,color:#831843
+```
 
 ---
 
@@ -182,6 +239,8 @@ kubectl rollout restart deployment/booking-api deployment/booking-worker deploym
 ---
 
 ## CI/CD Pipeline
+
+![CI/CD pipeline run](docs/screenshots/cicd-pipeline.png)
 
 The pipeline is defined in `.github/workflows/ci.yml`.
 
