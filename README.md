@@ -57,31 +57,6 @@ flowchart TD
     style SS     fill:#fce7f3,stroke:#db2777,color:#831843
 ```
 
-<details>
-<summary>Text-based diagram (original)</summary>
-
-```
-                          ┌─────────────┐
-  Client ─── HTTP ───────►│ booking-api │  Python / FastAPI
-                          │  port 8000  │
-                          └──────┬──────┘
-                                 │ RPUSH
-                          ┌──────▼──────┐
-                          │    Redis    │  bookings:queue
-                          │  (queue)    │  bookings:dead-letter
-                          └──────┬──────┘
-                                 │ BLPOP
-                          ┌──────▼──────┐
-                          │booking-worker│  Node.js / TypeScript
-                          │ (2 replicas) │  SELECT … FOR UPDATE
-                          └──────┬──────┘
-                                 │
-                          ┌──────▼──────┐       ┌────────────────┐
-                          │ PostgreSQL  │◄──────►│ status-service │  SSE stream
-                          │  (RDS/local)│        │   port 3001    │  /events/:id/live
-                          └─────────────┘       └────────────────┘
-```
-
 ### Services
 
 | Service | Language | Role |
