@@ -1,0 +1,40 @@
+flowchart TD
+    Browser(["🌐 Browser\n(React frontend\nport 5173)"])
+
+    subgraph api ["booking-api  •  Python / FastAPI  •  port 8000"]
+        API["POST /bookings\nGET /bookings/:id\nGET /events/:id/availability\nGET /health · /ready"]
+    end
+
+    subgraph queue ["Redis  •  port 6379"]
+        Q[("bookings:queue\n(List — RPUSH / BLPOP)")]
+        DL[("bookings:dead-letter\n(failed jobs)")]
+    end
+
+    subgraph worker ["booking-worker  •  Node.js / TypeScript  •  2 replicas"]
+        W["BLPOP loop\nSELECT … FOR UPDATE\nconfirm / reject"]
+    end
+
+    subgraph db ["PostgreSQL / RDS  •  port 5432"]
+        PG[("events\nbookings")]
+    end
+
+    subgraph sse ["status-service  •  Node.js / TypeScript  •  port 3001"]
+        SS["GET /events/:id/live\n(SSE — polls every 2 s)"]
+    end
+
+    Browser -->|"POST /bookings\nGET /bookings/:id"| API
+    API -->|"INSERT booking (pending)\nON CONFLICT DO NOTHING"| PG
+    API -->|"RPUSH job JSON"| Q
+    Q -->|"BLPOP (blocking pop)"| W
+    W -->|"BEGIN · SELECT FOR UPDATE\nUPDATE remaining_seats\nUPDATE bookings status\nCOMMIT / ROLLBACK"| PG
+    W -->|"RPUSH failed job"| DL
+    SS -->|"SELECT remaining_seats\n(poll every 2 s)"| PG
+    SS -->|"SSE data: {remaining_seats}\n(on change only)"| Browser
+
+    style Browser fill:#dbeafe,stroke:#3b82f6,color:#1e3a5f
+    style API    fill:#dcfce7,stroke:#16a34a,color:#14532d
+    style Q      fill:#fef9c3,stroke:#ca8a04,color:#713f12
+    style DL     fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
+    style W      fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+    style PG     fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e
+    style SS     fill:#fce7f3,stroke:#db2777,color:#831843
